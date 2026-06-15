@@ -19,7 +19,6 @@ The main objective of this work is better understand the modern methods for solv
 * Solving simple/popular PDE families using the implemented architecture;
 * Visualizing the results in comprehensible/interpretable manners; and
 * Comparing the results with other textbook results obtained with other architectures.
-notebook
 
 The data used in this work comes from the GitHub repository [The Well](https://github.com/polymathicai/the_well). Brief instructions on how to obtain the data from the repository and how to integrate it into PyTorch-friendly formats are presented both below and in the main Python notebook.
 

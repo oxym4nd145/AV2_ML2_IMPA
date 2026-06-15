@@ -217,3 +217,17 @@ def train_model(model, train_loader, val_loader, optimizer, criterion,
             f"val = {val_loss:.6f} | "
             f"best_val = {best_val:.6f}"
         )
+
+        history = []
+
+        history.append({
+            "epoch": epoch,
+            "train": train_loss,
+            "val": val_loss,
+            "best_val": best_val
+        })
+    
+    return history
+    
+
+        
