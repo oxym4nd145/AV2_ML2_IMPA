@@ -143,9 +143,6 @@ class FNO2d(nn.Module):
         return x
     
 
-def relative_l2_loss(pred, y):
-    return (torch.norm(pred - y, dim=(-2, -1)) / torch.norm(y, dim=(-2, -1))).mean()
-
 def train_one_epoch(model, loader, optimizer, criterion, epoch, epochs):
     model.train()
     running_loss = 0.0
@@ -189,6 +186,7 @@ def evaluate(model, loader, criterion):
 
 def train_model(model, train_loader, val_loader, optimizer, criterion,
                 epochs, checkpoint_dir="checkpoints"):
+    history = []
 
     torch.backends.cuda.matmul.allow_tf32 = True
     torch.set_float32_matmul_precision("high")
@@ -200,6 +198,8 @@ def train_model(model, train_loader, val_loader, optimizer, criterion,
     for epoch in range(epochs):
         train_loss = train_one_epoch(model, train_loader, optimizer, criterion, epoch, epochs)
         scheduler.step()
+
+        torch.cuda.empty_cache()
 
         val_loss = evaluate(model, val_loader, criterion)
 
@@ -218,8 +218,6 @@ def train_model(model, train_loader, val_loader, optimizer, criterion,
             f"best_val = {best_val:.6f}"
         )
 
-        history = []
-
         history.append({
             "epoch": epoch,
             "train": train_loss,
@@ -228,6 +226,3 @@ def train_model(model, train_loader, val_loader, optimizer, criterion,
         })
     
     return history
-    
-
-        
