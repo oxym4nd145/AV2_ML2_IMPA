@@ -141,7 +141,106 @@ class FNO2d(nn.Module):
         x = self.proj2(x)
 
         return x
-    
+
+class FourierLayer2d_v1(nn.Module):
+    def __init__(self,
+                 width,
+                 modes1,
+                 modes2):
+        super().__init__()
+
+        self.spectral = SpectralConv2d(
+            width,
+            width,
+            modes1,
+            modes2
+        )
+
+        self.pointwise = nn.Conv2d(
+            width,
+            width,
+            kernel_size=1
+        )
+
+        self.norm = nn.InstanceNorm2d(width)
+
+    def forward(self, x):
+
+        x = self.spectral(x) + self.pointwise(x)
+
+        x = self.norm(x)
+
+        return x
+
+class FNO2d_v1(nn.Module):
+    def __init__(
+        self,
+        modes1=16,
+        modes2=16,
+        width=64,
+        width1=64,
+        in_dim=3,
+        out_dim=1,
+        depth=4,
+        proj_dim=128
+    ):
+        super().__init__()
+
+        self.l1 = nn.Linear(
+            in_dim,
+            width1
+        )
+
+        self.l2 = nn.Linear(
+            width1,
+            width
+        )
+
+        self.layers = nn.ModuleList([
+            FourierLayer2d_v1(
+                width,
+                modes1,
+                modes2
+            )
+            for _ in range(depth)
+        ])
+
+        self.proj1 = nn.Linear(
+            width,
+            proj_dim
+        )
+
+        self.proj2 = nn.Linear(
+            proj_dim,
+            out_dim
+        )
+
+    def forward(self, x):
+        # (B,nx,ny,in_dim)
+        x = self.l1(x)
+        x = F.gelu(x)
+        x = self.l2(x)
+
+        # (B,width,nx,ny)
+        x = x.permute(
+            0, 3, 1, 2
+        )
+
+        for layer in self.layers:
+            x = layer(x)
+            x = F.gelu(x)
+
+        # (B,nx,ny,width)
+        x = x.permute(
+            0, 2, 3, 1
+        )
+
+        x = self.proj1(x)
+        x = F.gelu(x)
+
+        x = self.proj2(x)
+
+        return x
 
 def train_one_epoch(model, loader, optimizer, criterion, epoch, epochs):
     model.train()
