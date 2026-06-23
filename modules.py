@@ -284,7 +284,7 @@ def evaluate(model, loader, criterion):
 
 
 def train_model(model, train_loader, val_loader, optimizer, criterion,
-                epochs, checkpoint_dir="checkpoints"):
+                epochs, checkpoint_dir="checkpoints", label = 'best_model'):
     history = []
 
     torch.backends.cuda.matmul.allow_tf32 = True
@@ -308,7 +308,7 @@ def train_model(model, train_loader, val_loader, optimizer, criterion,
                 "epoch": epoch,
                 "model_state": model.state_dict(),
                 "optimizer_state": optimizer.state_dict(),
-            }, f"{checkpoint_dir}/best_model.pt")
+            }, f"{checkpoint_dir}/{label}.pt")
 
         print(
             f"Epoch {epoch+1:03d} | "
