@@ -16,7 +16,7 @@ class HelmholtzDataset(torch.utils.data.Dataset):
             sample["space_grid"]
         ], dim=-1)
 
-        y = sample["output_fields"]
+        y = sample["output_fields"][0, :, :, :]
 
         return x.float(), y.float()
     

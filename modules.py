@@ -242,7 +242,384 @@ class FNO2d_v1(nn.Module):
 
         return x
 
+class BaseMLP(nn.Module):
+  def __init__(self, depth, width):
+    super().__init__()
+
+    self.layers = nn.Sequential(
+                    *[
+                        nn.Sequential(nn.Linear(width, width), nn.ReLU())
+                  for _ in range(depth)]
+                  )
+
+  def forward(self, x):
+
+    for i in self.layers:
+      x = i(x)
+
+    return x
+
+
+class DoubleSkipFourierLayer2d(nn.Module):
+    def __init__(self,
+                 width,
+                 modes1,
+                 modes2,
+                 mlp_depth,
+                 mlp_width):
+        super().__init__()
+
+        self.spectral = SpectralConv2d(
+            width,
+            width,
+            modes1,
+            modes2
+        )
+
+        self.pointwise1 = nn.Conv2d(
+            width,
+            width,
+            kernel_size=1
+        )
+
+        self.pointwise2 = nn.Conv2d(
+            width,
+            width,
+            kernel_size=1
+        )
+
+        self.lnorm1 = nn.LayerNorm(width)
+        self.lnorm2 = nn.LayerNorm(width)
+
+        self.mlp = BaseMLP(mlp_depth, 384)
+
+    def forward(self, x):
+
+        # primeiro bloco
+        y = self.spectral(x)
+
+        y = y.permute(0, 2, 3, 1)
+        y = self.lnorm1(y)
+        y = y.permute(0, 3, 1, 2)
+
+        # primeiro skip
+        x = y + self.pointwise1(x)
+        x = F.gelu(x)
+
+        # segundo bloco
+        y = self.mlp(x)
+
+        y = y.permute(0, 2, 3, 1)
+        y = self.lnorm2(y)
+        y = y.permute(0, 3, 1, 2)
+
+        # segundo skip
+        x = y + self.pointwise2(x)
+        x = F.gelu(x)
+
+        return x
+
+class DoubleSkipFNO2d(nn.Module):
+    def __init__(
+        self,
+        modes1=16,
+        modes2=16,
+        width=64,
+        in_dim=3,
+        out_dim=1,
+        depth=4,
+        proj_dim=128,
+        mlp_depth=2,
+        mlp_width=384
+    ):
+        super().__init__()
+
+        self.lift = nn.Linear(
+            in_dim,
+            width
+        )
+
+        self.layers = nn.ModuleList([
+            DoubleSkipFourierLayer2d(
+                width,
+                modes1,
+                modes2,
+                mlp_depth,
+                mlp_width
+            )
+            for _ in range(depth)
+        ])
+
+        self.proj1 = nn.Linear(
+            width,
+            proj_dim
+        )
+
+        self.proj2 = nn.Linear(
+            proj_dim,
+            out_dim
+        )
+
+    def forward(self, x):
+        # (B,nx,ny,in_dim)
+        x = self.lift(x)
+
+        # (B,width,nx,ny)
+        x = x.permute(
+            0, 3, 1, 2
+        )
+
+        for layer in self.layers:
+            x = layer(x)
+
+        # (B,nx,ny,width)
+        x = x.permute(
+            0, 2, 3, 1
+        )
+
+        x = self.proj1(x)
+        x = F.gelu(x)
+
+        x = self.proj2(x)
+
+        return x
+    
+class BackbonePreFourierLayer2d(nn.Module):
+    def __init__(self,
+                 width,
+                 modes1,
+                 modes2,
+                 mlp_depth, 
+                 mlp_width):
+        super().__init__()
+
+        self.spectral = SpectralConv2d(
+            width,
+            width,
+            modes1,
+            modes2
+        )
+
+        self.pointwise = nn.Conv2d(
+            width,
+            width,
+            kernel_size=1
+        )
+
+        self.lnorm1 = nn.LayerNorm(width)
+
+        self.lnorm2 = nn.LayerNorm(width)
+
+        self.mlp = BaseMLP(mlp_depth, mlp_width)
+
+    def forward(self, x):
+
+        y = F.gelu(x)
+
+        y = y.permute(0, 2, 3, 1)
+        y = self.lnorm1(y)
+        y = y.permute(0, 3, 1, 2)
+
+        y = self.spectral(y)
+
+        y = y + x
+
+        y = F.gelu(y)
+
+        y = y.permute(0, 2, 3, 1)
+        y = self.lnorm2(y)
+        y = y.permute(0, 3, 1, 2)
+
+        y = self.mlp(y)
+
+        x = x + y
+
+        return x
+
+class BackbonePreFNO2d(nn.Module):
+    def __init__(
+        self,
+        modes1=16,
+        modes2=16,
+        width=64,
+        in_dim=3,
+        out_dim=1,
+        depth=4,
+        proj_dim=128,
+        mlp_depth=2,
+        mlp_width=256
+    ):
+        super().__init__()
+
+        self.lift = nn.Linear(
+            in_dim,
+            width
+        )
+
+        self.layers = nn.ModuleList([
+            BackbonePreFourierLayer2d(
+                width,
+                modes1,
+                modes2,
+                mlp_depth,
+                mlp_width
+            )
+            for _ in range(depth)
+        ])
+
+        self.proj1 = nn.Linear(
+            width,
+            proj_dim
+        )
+
+        self.proj2 = nn.Linear(
+            proj_dim,
+            out_dim
+        )
+
+    def forward(self, x):
+        # (B,nx,ny,in_dim)
+        x = self.lift(x)
+
+        # (B,width,nx,ny)
+        x = x.permute(
+            0, 3, 1, 2
+        )
+
+        for layer in self.layers:
+            x = layer(x)
+
+        # (B,nx,ny,width)
+        x = x.permute(
+            0, 2, 3, 1
+        )
+
+        x = self.proj1(x)
+        x = F.gelu(x)
+
+        x = self.proj2(x)
+
+        return x
+    
+class BackboneFourierLayer2d(nn.Module):
+    def __init__(self,
+                 width,
+                 modes1,
+                 modes2,
+                 mlp_depth, 
+                 mlp_width):
+        super().__init__()
+
+        self.spectral = SpectralConv2d(
+            width,
+            width,
+            modes1,
+            modes2
+        )
+
+        self.pointwise = nn.Conv2d(
+            width,
+            width,
+            kernel_size=1
+        )
+
+        self.lnorm1 = nn.LayerNorm(width)
+
+        self.lnorm2 = nn.LayerNorm(width)
+
+        self.mlp = BaseMLP(mlp_depth, mlp_width)
+
+    def forward(self, x):
+
+        y = x.permute(0, 2, 3, 1)
+        y = self.lnorm1(y)
+        y = y.permute(0, 3, 1, 2)
+
+        y = self.spectral(y)
+
+        y = y + x
+
+        y = F.gelu(y)
+
+        y = y.permute(0, 2, 3, 1)
+        y = self.lnorm2(y)
+        y = y.permute(0, 3, 1, 2)
+
+        y = self.mlp(y)
+
+        x = x + y
+
+        x = F.gelu(x)
+
+        return x
+
+class BackboneFNO2d(nn.Module):
+    def __init__(
+        self,
+        modes1=16,
+        modes2=16,
+        width=64,
+        in_dim=3,
+        out_dim=1,
+        depth=4,
+        proj_dim=128,
+        mlp_depth=2,
+        mlp_width=256
+    ):
+        super().__init__()
+
+        self.lift = nn.Linear(
+            in_dim,
+            width
+        )
+
+        self.layers = nn.ModuleList([
+            BackbonePreFourierLayer2d(
+                width,
+                modes1,
+                modes2,
+                mlp_depth,
+                mlp_width
+            )
+            for _ in range(depth)
+        ])
+
+        self.proj1 = nn.Linear(
+            width,
+            proj_dim
+        )
+
+        self.proj2 = nn.Linear(
+            proj_dim,
+            out_dim
+        )
+
+    def forward(self, x):
+        # (B,nx,ny,in_dim)
+        x = self.lift(x)
+
+        # (B,width,nx,ny)
+        x = x.permute(
+            0, 3, 1, 2
+        )
+
+        for layer in self.layers:
+            x = layer(x)
+
+        # (B,nx,ny,width)
+        x = x.permute(
+            0, 2, 3, 1
+        )
+
+        x = self.proj1(x)
+        x = F.gelu(x)
+
+        x = self.proj2(x)
+
+        return x
+
 def train_one_epoch(model, loader, optimizer, criterion, epoch, epochs):
+    
     model.train()
     running_loss = 0.0
 
