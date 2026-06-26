@@ -46,17 +46,21 @@ class plot:
         ax[1].set_ylabel('Erro de validação')
         ax[1].set_title('Erro de validação por época')
 
-        plt.show()
+        plt.suptitle('Curvas de treino do experimento ' + self.label)
 
         if save:
             plt.savefig(self.path)
 
+        plt.show()
+
+
 class gif:
-    def __init__(self, dataset, model, label, device):
+    def __init__(self, ds, model, label, device, path):
 
         self.model = model
-        self.ds = dataset
+        self.ds = ds
         self.label = label
+        self.path = path
         self.device = device
     
     def show(self, steps):
@@ -69,8 +73,10 @@ class gif:
 
             x, y = self.ds[i]
 
-            if len(y.shape)==4:
-                y = y[0, :, :, :]
+            rect_flag = 0
+
+            if y.shape[0] > y.shape[1]:
+                rect_flag = 1
 
             with torch.no_grad():
                 pred = self.model(x.unsqueeze(0).to(self.device))
@@ -78,6 +84,10 @@ class gif:
             pred = pred.squeeze(0).cpu().numpy()
 
             y = y.cpu().numpy()
+
+            if rect_flag:
+                y = np.permute_dims(y,(1, 0, 2))
+                pred = np.permute_dims(pred,(1, 0, 2))
 
             fig, ax = plt.subplots(2,2, figsize=(15, 15))
 
@@ -95,6 +105,8 @@ class gif:
             ax[1][1].imshow(sum([pred[:,:,i] for i in range(1, len)]))
             ax[1][1].set_title("Soma das previsões dos outros campos")
 
+            plt.suptitle('Resultados do experimento ' + self.label)
+
             buf = BytesIO()
             plt.savefig(buf, format="png")
             plt.close()
@@ -102,7 +114,7 @@ class gif:
             buf.seek(0)
             frames.append(imageio.imread(buf))
 
-        imageio.mimsave(self.label + ".gif", frames, fps=10)
+        imageio.mimsave(self.path + ".gif", frames, fps=10)
 
 
 
