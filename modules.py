@@ -660,7 +660,7 @@ def evaluate(model, loader, criterion):
     return val_loss / len(loader)
 
 
-def train_model(model, train_loader, val_loader, optimizer, criterion,
+def train_model(model, train_loader, val_loader, optimizer, criterion, scheduler,
                 epochs, checkpoint_dir="checkpoints", label = 'best_model'):
     history = []
 
@@ -668,7 +668,6 @@ def train_model(model, train_loader, val_loader, optimizer, criterion,
     torch.set_float32_matmul_precision("high")
 
     Path(checkpoint_dir).mkdir(parents=True, exist_ok=True)
-    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=epochs)
     best_val = np.inf
 
     for epoch in range(epochs):
